@@ -21,16 +21,16 @@ void setupHomekit();
 ///////////////////////////////////////////
 #define _ENABLE_SERIAL_
 #define _ENABLE_LEDS_
-#define _ENABLE_DS3231_
-#define _ENABLE_INTERRUPTS_
-#define _ENABLE_HOMEKIT_
-#define _ENABLE_ALS_
+// #define _ENABLE_DS3231_
+// #define _ENABLE_INTERRUPTS_
+// #define _ENABLE_HOMEKIT_
+// #define _ENABLE_ALS_
 // #define _ENABLE_TEST_MODE_ //Turn on all LEDs white
 // Hardware
 #define BUTTON_PIN        D3
 #define SWITCH_DISABLE_HOMEKIT D5      // A on silkscreen
 #define LED_PIN           D6           // Neopixel control
-#define SWITCH_DISABLE_AUTOCOLOR  D7   // B on silkscreen
+#define SWITCH_DISABLE_LIGHTS  D7   // B on silkscreen
 #define LIGHT_SENSOR_PIN  A0
 // Application settings
 #define FALSE             0
@@ -46,16 +46,20 @@ void setupHomekit();
 #define RED               0x00FF0000
 #define GREEN             0x0000FF00
 #define BLUE              0x000000FF
+#define LIGHT_BLUE        0x00ADD8E6
 #define WHITE             0x00FFFFFF
+#define BROWN             0x00964B00
+#define YELLOW            0x00FFFF00
 #define MIN_BRIGHTNESS    1           // Min LED brightness for dark environments
 #define MAX_BRIGHTNESS    40          // Max LED brightness for well lit environments
 #define AUTO_COLOR_STEP_SIZE 48000/60 // From Red (0) to Blue (~48000) in 60min
+#define SEQUENCES         4
 
 ////////////////////////////////////////////////////
 ///////////////// Global variables /////////////////
 ////////////////////////////////////////////////////
-static float BRIGHTNESS_GAIN = (float)(MAX_BRIGHTNESS - MIN_BRIGHTNESS)/100;
-static float BRIGHTNESS_OFFSET = MIN_BRIGHTNESS;
+// static float BRIGHTNESS_GAIN = (float)(MAX_BRIGHTNESS - MIN_BRIGHTNESS)/100;
+// static float BRIGHTNESS_OFFSET = MIN_BRIGHTNESS;
 Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ400);
 enum states {S_TIME, S_TEMPERATURE, S_SET_HOUR, S_SET_MINUTE};
 enum buttonStates {PRESSED, RELEASED};
@@ -70,6 +74,10 @@ uint8_t current_sat = 0;
 uint16_t current_hue = 12*182;
 uint32_t rgb_colors = WHITE;
 bool homekitInitialized = FALSE;
+uint8_t i = 0;
+uint8_t j = 1;
+uint8_t k = 2;
+uint8_t l = 3;
 
 #ifdef _ENABLE_DS3231_
 RTC_DS3231 rtc;
@@ -99,7 +107,7 @@ void setup() {
 
   #ifdef _ENABLE_LEDS_
   strip.begin();                        // Initiazlize NeoPixel strip object
-  strip.setBrightness(MIN_BRIGHTNESS);  // Set BRIGHTNESS (max = 255)
+  strip.setBrightness(MAX_BRIGHTNESS);  // Set BRIGHTNESS (max = 255)
   strip.clear();
   strip.show();
   delay(1000);
@@ -109,7 +117,7 @@ void setup() {
   #endif // _ENABLE_LEDS_
 
   pinMode(SWITCH_DISABLE_HOMEKIT, INPUT_PULLUP);
-  pinMode(SWITCH_DISABLE_AUTOCOLOR, INPUT_PULLUP);
+  pinMode(SWITCH_DISABLE_LIGHTS, INPUT_PULLUP);
 
   #ifdef _ENABLE_SERIAL_
   Serial.begin(SERIAL_SPEED);
@@ -136,132 +144,34 @@ void setup() {
     rtc.adjust(DateTime(2017, 10, 30, 10, 25, 0));
   }
   #endif // _ENABLE_DS3231_
-
-  // #ifdef _ENABLE_LEDS_
-  // strip.begin();                        // Initiazlize NeoPixel strip object
-  // strip.setBrightness(MIN_BRIGHTNESS);  // Set BRIGHTNESS (max = 255)
-  // strip.clear();
-  // strip.show();
-  // #endif // _ENABLE_LEDS_
 }
 
 
 void loop() {
-  int16_t ambient_light = 0;
 
   #ifdef _ENABLE_HOMEKIT_
   if (homekitInitialized == TRUE) {my_homekit_loop();}
   #endif // _ENABLE_HOMEKIT_
   
   strip.clear();
-  refreshTime = REFRESH_TIME_STD;
+
+  i++; j++; k++; l++;
+  if (i > SEQUENCES - 1){i = 0;}
+  if (j > SEQUENCES - 1){j = 0;}
+  if (k > SEQUENCES - 1){k = 0;}
+  if (l > SEQUENCES - 1){l = 0;}
   
-  switch (operatingMode){
-    case S_TIME:
-      #ifdef _ENABLE_TEST_MODE_
-      Serial.println("Test Mode");
-      strip.fill(WHITE, 0, 126);
-      strip.setBrightness(10);
-      strip.show();
-      delay(refreshTime);
-      return;
-      #endif // _ENABLE_TEST_MODE_
-
-      // Set LED brightness based on ambient light
-      ambient_light = getAmbientLight();
-      brightness = (float) (ambient_light * BRIGHTNESS_GAIN + BRIGHTNESS_OFFSET);
-      strip.setBrightness((uint8_t)brightness);
-
-      #ifdef _ENABLE_DS3231_
-      now = rtc.now(); // Get time
-      #else
-      now = DateTime(2017, 10, 30, 10, 25, 0);
-      #endif // _ENABLE_DS3231_
-      hour = (now.hour()>12 ? (now.hour()-12) : (now.hour())); // Convert 24-h format into 12-h format
-      Serial.print("Time mode: ");
-      Serial.print(hour, DEC);
-      Serial.print(':');
-      Serial.println(now.minute(), DEC);
-      #ifdef _ENABLE_ALS_
-      Serial.print("Ambient Light: ");
-      Serial.println(ambient_light, DEC);
-      Serial.print("Brightness: ");
-      Serial.println(brightness, DEC);
-      #endif // _ENABLE_ALS_
-
-      // Set hours
-      hour_to_display = hour;
-      if (now.minute() > 39){ 
-        hour_to_display = hour + 1;   // Past hour:39 we should print hour+1 "meno venti", "meno un quarto" and so on...
-        if (hour_to_display > 12){ hour_to_display = 1; }
-      }
-      if (hour_to_display == 0){ hour_to_display = 12; }             // Midnight is 0 but should display string #12
-      
-      // Set minutes (words)
-      minutes_range = (uint8_t)floor(now.minute()/5);
-      
-      // Set minutes (dots)
-      dots = now.minute() - minutes_range * 5;
-      break;
-
-    case S_TEMPERATURE:
-      #ifdef _ENABLE_DS3231_
-      temperature = (uint8_t)(rtc.getTemperature()+0.5); // Get temperature (and convert in integer)
-      #else
-      temperature = 25;
-      #endif // _ENABLE_DS3231_
-      Serial.print("Temperature mode: ");
-      Serial.println(temperature);
-      menuTimer++; // Back to time mode once timer expires
-      if (menuTimer == MENU_TIME_STD){
-        operatingMode = S_TIME;
-      }
-      break;
-
-    case S_SET_HOUR:
-      Serial.print("Setting hour: ");
-      Serial.println(hour, DEC);
-      refreshTime = REFRESH_TIME_FAST;
-      if (shortPressEvent == TRUE){
-        shortPressEvent = FALSE; // Clear event
-        hour = (hour < 23 ? (hour+1) : (0)); // Increment hours
-        menuTimer = 0; // Restart timer
-      }
-      menuTimer++; // Moving to minutes set mode once timer expires
-      if (menuTimer == MENU_TIME_FAST){
-        operatingMode = S_SET_MINUTE;
-        menuTimer = 0;
-        #ifdef _ENABLE_DS3231_
-        now = rtc.now(); // Get time
-        #endif // _ENABLE_DS3231_
-        minutes = now.minute();
-      }
-      break;
-
-    case S_SET_MINUTE:
-      Serial.print("Setting minutes: ");
-      Serial.println(minutes, DEC);
-      refreshTime = REFRESH_TIME_FAST;
-      if (shortPressEvent == TRUE){
-        shortPressEvent = FALSE; // Clear event
-        minutes = (minutes < 59 ? (minutes+1) : (0)); // Increment minutes
-        menuTimer = 0; // Restart timer
-      }
-      menuTimer++; // Back to time mode once timer expires
-      if (menuTimer == MENU_TIME_FAST){
-        #ifdef _ENABLE_DS3231_
-        rtc.adjust(DateTime(2017, 10, 30, hour, minutes, 0));
-        #endif // _ENABLE_DS3231_
-        operatingMode = S_TIME;
-      }
-      break;
-
-    default:
-      break;
+  // strip.fill(LIGHT_BLUE);                                          // Sky
+  updateStrip(TRUNK, sizeof(TRUNK), NO_ROW, BROWN);                   // Trunk
+  updateStrip(TREE, sizeof(TREE), NO_ROW, GREEN);                     // Tree
+  if (digitalRead(SWITCH_DISABLE_LIGHTS) == FALSE) // If switch is set to have color to change dynamically
+  {
+    updateStrip(LIGHTS[i], sizeof(LIGHTS[i]), NO_ROW, RED);             // Red lights
+    updateStrip(LIGHTS[j], sizeof(LIGHTS[j]), NO_ROW, BLUE);            // Blue lights
+    updateStrip(LIGHTS[k], sizeof(LIGHTS[k]), NO_ROW, LIGHT_BLUE);      // White lights
+    updateStrip(LIGHTS[l], sizeof(LIGHTS[l]), NO_ROW, YELLOW);          // Yellow lights
   }
-  updateFrame();
   strip.show();
-  if (homekitInitialized == FALSE){setupHomekit();} // Setup HomeKit the first time
   delay(refreshTime);
 }
 
@@ -288,14 +198,13 @@ void updateFrame(void)
 {
    switch (operatingMode){
     case S_TIME:
-      if (digitalRead(SWITCH_DISABLE_AUTOCOLOR) == FALSE) // If switch is set to have color to change dynamically
+      if (digitalRead(SWITCH_DISABLE_LIGHTS) == FALSE) // If switch is set to have color to change dynamically
       {
         current_hue = (uint16_t)(now.minute() * AUTO_COLOR_STEP_SIZE); // Increase color
         current_sat = 255; // Set saturation to max
         updateColor(); // Update rgb_colors
       } // Else keep the color the same (either default or from HomeKit)
-      if (hour_to_display != 1){ updateStrip(HOURS[0], sizeof(HOURS[0]), NO_ROW, rgb_colors); } // Unless it is 1 print "Sono le ore"
-      updateStrip(HOURS[hour_to_display], sizeof(HOURS[hour_to_display]), NO_ROW, rgb_colors);
+      if (hour_to_display != 1){ updateStrip(HOURS[0], sizeof(HOURS[0]), NO_ROW, rgb_colors); }updateStrip(HOURS[hour_to_display], sizeof(HOURS[hour_to_display]), NO_ROW, rgb_colors);
       updateStrip(MINUTES[minutes_range], sizeof(MINUTES[minutes_range]), NO_ROW, rgb_colors);
       updateStrip(DOTS[dots], sizeof(DOTS[dots]), NO_ROW, rgb_colors);
     break;
@@ -321,7 +230,8 @@ void updateFrame(void)
    }
 }
 
-
+ // Unless it is 1 print "Sono le ore"
+      
 #ifdef _ENABLE_INTERRUPTS_
 void IRAM_ATTR button_ISR() {
   if(digitalRead(BUTTON_PIN) == PRESSED){ // On press...
