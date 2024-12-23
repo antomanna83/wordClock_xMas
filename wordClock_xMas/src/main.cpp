@@ -1,3 +1,6 @@
+// Switch B enables or disables the lights on the xMas tree
+// Switch A toggles between xMas tree and message
+
 #include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
 #include "RTClib.h"
@@ -9,12 +12,12 @@
 ///////////////// Functions /////////////////
 /////////////////////////////////////////////
 void button_ISR();
-void updateFrame();
-void updateStrip(uint8_t *message, uint8_t len, uint8_t row, uint32_t color);
+void updateStrip(uint8_t *message, uint8_t len, int8_t row, uint32_t color);
 int16_t getAmbientLight();
 void my_homekit_setup();
 void my_homekit_loop();
 void setupHomekit();
+void clearDots();
 
 ///////////////////////////////////////////
 ///////////////// DEFINES /////////////////
@@ -28,16 +31,16 @@ void setupHomekit();
 // #define _ENABLE_TEST_MODE_ //Turn on all LEDs white
 // Hardware
 #define BUTTON_PIN        D3
-#define SWITCH_DISABLE_HOMEKIT D5      // A on silkscreen
-#define LED_PIN           D6           // Neopixel control
-#define SWITCH_DISABLE_LIGHTS  D7   // B on silkscreen
+#define SWITCH_DUMMY      D5        // A on silkscreen (not sure itis working)
+#define LED_PIN           D6        // Neopixel control
+#define SWITCH_MODE       D7        // B on silkscreen
 #define LIGHT_SENSOR_PIN  A0
 // Application settings
 #define FALSE             0
 #define TRUE              1
 #define SERIAL_SPEED      115200
 #define REFRESH_TIME_STD  1000        // Refresh time for standard mode (Time\Temperature) [ms]
-#define REFRESH_TIME_FAST 200         // Fast refresh time for time setting mode [ms]
+#define REFRESH_TIME_FAST 400         // Fast refresh time for time setting mode [ms]
 #define MENU_TIME         5000        // How long will the menu time will stay active (temp, hour, min) [ms]
 #define MENU_TIME_STD     MENU_TIME/REFRESH_TIME_STD
 #define MENU_TIME_FAST    MENU_TIME/REFRESH_TIME_FAST
@@ -50,6 +53,7 @@ void setupHomekit();
 #define WHITE             0x00FFFFFF
 #define BROWN             0x00964B00
 #define YELLOW            0x00FFFF00
+#define BLACK             0x00000000
 #define MIN_BRIGHTNESS    1           // Min LED brightness for dark environments
 #define MAX_BRIGHTNESS    40          // Max LED brightness for well lit environments
 #define AUTO_COLOR_STEP_SIZE 48000/60 // From Red (0) to Blue (~48000) in 60min
@@ -78,6 +82,7 @@ uint8_t i = 0;
 uint8_t j = 1;
 uint8_t k = 2;
 uint8_t l = 3;
+int8_t row = -6;
 
 #ifdef _ENABLE_DS3231_
 RTC_DS3231 rtc;
@@ -116,8 +121,8 @@ void setup() {
   delay(1000);
   #endif // _ENABLE_LEDS_
 
-  pinMode(SWITCH_DISABLE_HOMEKIT, INPUT_PULLUP);
-  pinMode(SWITCH_DISABLE_LIGHTS, INPUT_PULLUP);
+  pinMode(SWITCH_MODE, INPUT_PULLUP);
+  pinMode(SWITCH_DUMMY, INPUT_PULLUP);
 
   #ifdef _ENABLE_SERIAL_
   Serial.begin(SERIAL_SPEED);
@@ -155,83 +160,69 @@ void loop() {
   
   strip.clear();
 
-  i++; j++; k++; l++;
-  if (i > SEQUENCES - 1){i = 0;}
-  if (j > SEQUENCES - 1){j = 0;}
-  if (k > SEQUENCES - 1){k = 0;}
-  if (l > SEQUENCES - 1){l = 0;}
-  
-  // strip.fill(LIGHT_BLUE);                                          // Sky
-  updateStrip(TRUNK, sizeof(TRUNK), NO_ROW, BROWN);                   // Trunk
-  updateStrip(TREE, sizeof(TREE), NO_ROW, GREEN);                     // Tree
-  if (digitalRead(SWITCH_DISABLE_LIGHTS) == FALSE) // If switch is set to have color to change dynamically
+  if (digitalRead(SWITCH_MODE) == TRUE) // xMas tree
   {
+    i++; j++; k++; l++;
+    if (i > SEQUENCES - 1){i = 0;}
+    if (j > SEQUENCES - 1){j = 0;}
+    if (k > SEQUENCES - 1){k = 0;}
+    if (l > SEQUENCES - 1){l = 0;}
+    
+    // strip.fill(LIGHT_BLUE);                                          // Sky
+    updateStrip(TRUNK, sizeof(TRUNK), NO_ROW, BROWN);                   // Trunk
+    updateStrip(TREE, sizeof(TREE), NO_ROW, GREEN);                     // Tree
+
     updateStrip(LIGHTS[i], sizeof(LIGHTS[i]), NO_ROW, RED);             // Red lights
     updateStrip(LIGHTS[j], sizeof(LIGHTS[j]), NO_ROW, BLUE);            // Blue lights
     updateStrip(LIGHTS[k], sizeof(LIGHTS[k]), NO_ROW, LIGHT_BLUE);      // White lights
     updateStrip(LIGHTS[l], sizeof(LIGHTS[l]), NO_ROW, YELLOW);          // Yellow lights
+
+    refreshTime = REFRESH_TIME_STD;
   }
+  else // Message
+  {
+    #define MESSAGE_LEN 10
+    // Running message
+    row = row + 2;
+    if (row > 8*11){row = -6;}
+    for (i = 0; i < MESSAGE_LEN; i++) {
+      updateStrip(MESSAGE[i], sizeof(MESSAGE[i]), row-8*i, RED);
+    }
+    clearDots();
+    // Single letter
+    // i++;
+    // if (i > MESSAGE_LEN - 1){i = 0;}
+    // updateStrip(MESSAGE[i], sizeof(MESSAGE[i]), NO_ROW, RED);
+
+    refreshTime = REFRESH_TIME_FAST;
+  }
+
   strip.show();
   delay(refreshTime);
 }
 
 
-void updateStrip(uint8_t *message, uint8_t len, uint8_t row, uint32_t color){
+void updateStrip(uint8_t *message, uint8_t len, int8_t row, uint32_t color){
   for(int i=0; i<len; i++) {
     strip.setPixelColor(message[i] + row * 11, color); 
   }
 }
 
-
-void updateColor()
-{
-  rgb_colors = strip.gamma32(strip.ColorHSV(current_hue, current_sat));
-  // Serial.print("New color: "); Serial.println(rgb_colors, HEX);
-  Serial.print("Current hue "); Serial.println(current_hue);
-  Serial.print("Current sat "); Serial.println(current_sat);
-  // updateFrame();
-  // strip.show();
+void clearDots(){
+  for(int i=121; i<125; i++) {
+    strip.setPixelColor(i, BLACK); 
+  }
 }
 
 
-void updateFrame(void)
-{
-   switch (operatingMode){
-    case S_TIME:
-      if (digitalRead(SWITCH_DISABLE_LIGHTS) == FALSE) // If switch is set to have color to change dynamically
-      {
-        current_hue = (uint16_t)(now.minute() * AUTO_COLOR_STEP_SIZE); // Increase color
-        current_sat = 255; // Set saturation to max
-        updateColor(); // Update rgb_colors
-      } // Else keep the color the same (either default or from HomeKit)
-      if (hour_to_display != 1){ updateStrip(HOURS[0], sizeof(HOURS[0]), NO_ROW, rgb_colors); }updateStrip(HOURS[hour_to_display], sizeof(HOURS[hour_to_display]), NO_ROW, rgb_colors);
-      updateStrip(MINUTES[minutes_range], sizeof(MINUTES[minutes_range]), NO_ROW, rgb_colors);
-      updateStrip(DOTS[dots], sizeof(DOTS[dots]), NO_ROW, rgb_colors);
-    break;
-    case S_TEMPERATURE:
-      updateStrip(NUMBERS[temperature/10], sizeof(NUMBERS[temperature/10]), 6, RED);
-      updateStrip(NUMBERS[temperature-(temperature/10)*10], sizeof(NUMBERS[temperature-(temperature/10)*10]), 0, RED);
-      break;
-
-    case S_SET_HOUR:
-      updateStrip(ORE, sizeof(ORE), NO_ROW, BLUE);
-      updateStrip(NUMBERS[hour/10], sizeof(NUMBERS[hour/10]), 6, GREEN);
-      updateStrip(NUMBERS[hour-(hour/10)*10], sizeof(NUMBERS[hour-(hour/10)*10]), 0, GREEN);
-      break;
-
-    case S_SET_MINUTE:
-      updateStrip(MINUTI, sizeof(MINUTI), NO_ROW, BLUE);
-      updateStrip(NUMBERS[minutes/10], sizeof(NUMBERS[minutes/10]), 6, GREEN);
-      updateStrip(NUMBERS[minutes-(minutes/10)*10], sizeof(NUMBERS[minutes-(minutes/10)*10]), 0, GREEN);
-      break;
-
-    default:
-      break;
-   }
-}
-
- // Unless it is 1 print "Sono le ore"
-      
+// void updateColor()
+// {
+//   rgb_colors = strip.gamma32(strip.ColorHSV(current_hue, current_sat));
+//   // Serial.print("New color: "); Serial.println(rgb_colors, HEX);
+//   Serial.print("Current hue "); Serial.println(current_hue);
+//   Serial.print("Current sat "); Serial.println(current_sat);
+// }
+     
 #ifdef _ENABLE_INTERRUPTS_
 void IRAM_ATTR button_ISR() {
   if(digitalRead(BUTTON_PIN) == PRESSED){ // On press...
@@ -328,7 +319,7 @@ void my_homekit_loop() {
 
 void setupHomekit(void)
 {
-  if (digitalRead(SWITCH_DISABLE_HOMEKIT) == FALSE)
+  // if (digitalRead(SWITCH_DISABLE_HOMEKIT) == FALSE)
   {
     #ifdef _ENABLE_HOMEKIT_
     wifi_connect();
