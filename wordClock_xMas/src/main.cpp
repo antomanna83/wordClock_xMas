@@ -83,6 +83,13 @@ uint8_t j = 1;
 uint8_t k = 2;
 uint8_t l = 3;
 int8_t row = -6;
+uint32_t COLORS[] = {
+    RED,
+    GREEN,
+    BLUE,
+    WHITE,
+    YELLOW
+};
 
 #ifdef _ENABLE_DS3231_
 RTC_DS3231 rtc;
@@ -181,12 +188,18 @@ void loop() {
   }
   else // Message
   {
-    #define MESSAGE_LEN 10
+    #define MESSAGE_LEN 11
     // Running message
     row = row + 2;
-    if (row > 8*11){row = -6;}
+    if (row > 8*MESSAGE_LEN)
+    {
+      row = -6;
+      k++;
+      if(k>4){k=0;}
+
+    }
     for (i = 0; i < MESSAGE_LEN; i++) {
-      updateStrip(MESSAGE[i], sizeof(MESSAGE[i]), row-8*i, RED);
+      updateStrip(MESSAGE[i], sizeof(MESSAGE[i]), row-8*i, COLORS[k]);
     }
     clearDots();
     // Single letter
@@ -209,7 +222,7 @@ void updateStrip(uint8_t *message, uint8_t len, int8_t row, uint32_t color){
 }
 
 void clearDots(){
-  for(int i=121; i<125; i++) {
+  for(int i=120; i<125; i++) {
     strip.setPixelColor(i, BLACK); 
   }
 }
